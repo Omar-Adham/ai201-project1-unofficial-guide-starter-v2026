@@ -80,24 +80,116 @@ def fallback_split(
     return chunks
 
 
+MIN_CHUNK = 80   # characters. Below this a paragraph is a fragment, not a thought.
+
+
 def split_documents(documents: list[Document]) -> list[Chunk]:
     """
-    Split documents into chunks. ⚠️ REPLACE THE BODY OF THIS IN MILESTONE 3.
+    Split on paragraphs, and repeat the document's title on every chunk.
 
-    Right now it just calls the fallback. That is the plain, generic behaviour
-    the brief is talking about.
+    Written for `campus_life` in Milestone 3, from two things I measured about
+    those documents rather than from a generic character count.
 
-    When you write your own strategy, set `produced_by` to
-    "chunker.py::split_documents" so your README's Sample Chunks section names
-    the right function. `app.py chunks` prints that string for you.
+    **One: the starter never split anything.** The documents run 178 to 549
+    characters and CHUNK_SIZE was 800, so 88 documents came out as 88 chunks.
+    But most of those documents hold more than one thought. Kestrel Commons
+    has one paragraph about wait times and the stir-fry station, and a second
+    about opening hours and price. A question about hours has to match against
+    the wait-time sentences too, and those dilute it. Splitting on the blank
+    line separates them.
 
-    Things worth thinking about before you write any code:
-      - Are your documents short posts or long guides?
-      - Is the useful information in one sentence, or spread over a paragraph?
-      - Would splitting on paragraph breaks keep more thoughts intact than
-        splitting on a character count?
+    **Two: the title is always alone on the first line.** All 88 of them.
+    That matters twice over:
+
+      - Split on blank lines naively and every document donates a 22-character
+        orphan chunk that says "On the housing lottery" and nothing else.
+      - Worse, the *body* paragraphs often don't name their own subject.
+        "Hours are 7:00am to 9:00pm weekdays" appears without the words
+        "Kestrel Commons" anywhere in it. This corpus has seven dining halls
+        and seven laundry rooms written to the same template, two of which
+        share whole sentences verbatim, so a chunk that doesn't name its
+        building is a chunk that will be retrieved for the wrong one.
+
+    So the title is not a chunk. It is a prefix carried onto every chunk cut
+    out of that document, which is what makes each one able to stand alone.
+
+    That prefix is also why CHUNK_OVERLAP is 0. Overlap exists so a thought cut
+    in half survives in one of the two pieces; splitting on paragraph breaks
+    means nothing gets cut in half, and the context a reader actually needs
+    here is "which building is this about", which the title carries directly.
+
+    CHUNK_SIZE survives as a ceiling rather than a target: any paragraph longer
+    than it falls back to `fallback_split`. Nothing in `campus_life` reaches
+    it — the longest body paragraph is 373 characters — but a corpus with one
+    runaway paragraph shouldn't produce one runaway chunk.
     """
-    return fallback_split(documents)
+    chunks: list[Chunk] = []
+
+    for doc in documents:
+        title, _, body = doc.text.partition("\n")
+        title = title.strip()
+
+        paragraphs = [p.strip() for p in body.split("\n\n") if p.strip()]
+        if not paragraphs:
+            paragraphs = [title]      # a document that is only a title line
+
+        index = 0   # counts chunks within this document, not paragraphs, so
+                    # that a paragraph which falls back to several windows
+                    # doesn't hand out an index a later paragraph reuses
+
+        for piece in _merge_short(paragraphs):
+            text = piece if piece.startswith(title) else f"{title}\n\n{piece}"
+
+            if len(text) > config.CHUNK_SIZE:
+                # Too long to be one thought. Fall back to fixed windows for
+                # this piece only, and keep the title on each of them.
+                pieces = [
+                    f"{title}\n\n{part.text}"
+                    for part in fallback_split(
+                        [Document(source=doc.source, text=piece)]
+                    )
+                ]
+            else:
+                pieces = [text]
+
+            for body in pieces:
+                chunks.append(
+                    Chunk(
+                        text=body,
+                        source=doc.source,
+                        index=index,
+                        produced_by="chunker.py::split_documents",
+                    )
+                )
+                index += 1
+
+    return chunks
+
+
+def _merge_short(paragraphs: list[str]) -> list[str]:
+    """
+    Roll paragraphs shorter than MIN_CHUNK into the one after them.
+
+    A two-line aside on its own is a fragment — it matches a question by
+    keyword and then has nothing to answer it with. Joining it to the next
+    paragraph costs a little focus and buys a chunk that can stand up.
+    """
+    merged: list[str] = []
+    buffer = ""
+
+    for paragraph in paragraphs:
+        buffer = f"{buffer}\n\n{paragraph}" if buffer else paragraph
+        if len(buffer) >= MIN_CHUNK:
+            merged.append(buffer)
+            buffer = ""
+
+    if buffer:                          # trailing scrap, too short to stand
+        if merged:
+            merged[-1] = f"{merged[-1]}\n\n{buffer}"
+        else:
+            merged.append(buffer)
+
+    return merged
 
 
 def describe(chunks: list[Chunk]) -> str:
