@@ -1,23 +1,8 @@
 # The Unofficial Guide
 
+**Name:** _TODO — add your name here before submitting_
+
 **Corpus:** `campus_life` — 88 short posts about student life.
-
-<!-- ⚠️ TODO: put your name on the line above. I left it off deliberately
-     rather than guess it. -->
-
-
-> **This file is your submission.** Fill it in as you go — most sections get
-> written during the milestone that produces them, not at the end.
->
-> How the starter works, and every command you'll need, is in `RUNNING.md`.
-> Leave that file alone.
->
-> **Paste everything as text.** No screenshots, no video. A typed table gets
-> full credit; a picture of the same table gets none.
->
-> Delete these instruction blocks as you replace them. The `<!-- -->` comments
-> are notes to you and don't show up when the page renders — you can leave them
-> or remove them.
 
 ---
 
@@ -285,24 +270,38 @@ enough to reach that branch so it never fired, but a document with one long
 paragraph followed by a short one would have produced two chunks with the
 same index. I had it restructured around a single running counter.
 
-**2. Pressure-testing my acceptance criteria (Milestone 2).** I pasted my five
-criteria in and asked how each one would be tested using only what the
-sentence said, with no improvements suggested. Three came back testable.
-Criterion 5 came back as the weakest, because "relevant" was doing all the
-work and two people would score the same chunk differently. Criterion 2 came
-back with a hole I had not thought about: a question the gate refuses produces
-no source, so does a refusal count as a failure of "every answer names a
-source"? Nothing in my sentence said. I did not rewrite the criterion, since
-it was given to me, but I wrote the answer into my reasoning underneath it —
-refusals are not counted here, because that is what criterion 3 measures and
-one event should not fail two criteria.
+**2. Setting the relevance cutoff (Milestone 4).** This one changed my answer,
+not just my code. I had my two groups of distances — 0.146 to 0.421 for my
+questions, 0.825 to 0.923 for the `OUT_OF_SCOPE` ones — and I asked where the
+cutoff should go and what I would get wrong at that number. The second half of
+that question is what produced something useful.
 
-I also had my five test questions checked against the corpus before committing
-to them. All five came back answerable at rank 1, which meant a target of
-"4 of 5" would have been one I could not miss. I replaced the MATH 220
-workload lookup with "Which dining hall is open the latest?", which is
-genuinely unanswerable by this pipeline — the answer is Verrill Street Grill
-and Verrill is not in the retrieved set.
+What came back was that the gap looked clean because the questions making it
+were about Mongolia, Rust and diesel engines, and nobody asks this system
+those. The suggestion was to measure a third group: questions a student would
+plausibly ask that my corpus has no document for. I wrote six — gym hours,
+pharmacies, pets in dorms, joining a society, appealing a parking ticket,
+plagiarism — and they came out between 0.382 and 0.770, inside the gap I was
+about to put a number in the middle of.
+
+That moved my cutoff from 0.6 to 0.52, and it exposed a case I would not have
+found otherwise: the gym question scores 0.382, which is *lower* than my
+hardest real question, so no threshold can separate them. I checked what
+happened to it end to end, and the grounding instruction refused it after the
+gate had let it through. That is why I left `GROUNDING_INSTRUCTION` alone
+instead of tightening it — I had a real example of it doing the job, so
+tightening it would have been guessing.
+
+**Also worth recording.** I had my five acceptance criteria pressure-tested by
+asking how each one would be tested using only what the sentence said, with no
+improvements suggested. Criterion 2 came back with a hole I had not thought
+about: a question the gate refuses produces no source, so does a refusal count
+against "every answer names a source"? Nothing in my sentence said. I did not
+rewrite the criterion, since it was given to me, but I wrote the answer into
+my reasoning underneath it. I also had my five test questions checked against
+the corpus before committing to them — all five came back answerable at rank 1,
+which would have made "4 of 5" a target I could not miss, so I replaced the
+MATH 220 lookup with the dining hall question that genuinely fails.
 
 <!-- ── Stretch features ─────────────────────────────────────────────────────
      Doing one? Say so here BEFORE you start. A feature this README never
