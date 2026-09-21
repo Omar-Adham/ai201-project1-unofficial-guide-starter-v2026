@@ -40,7 +40,15 @@ contains the answer.
      chunk containing the answer is never retrieved. That is a concrete reason
      to expect one miss out of five. -->
 
-<!-- Your sentence goes here. -->
+Four of my five questions are single-fact lookups, and each returns its source
+document at rank 1. The fifth is not: "Which dining hall is open the latest?"
+can only be answered by comparing closing times across all seven dining hall
+documents, and TOP_K is 5. The correct answer is Verrill Street Grill at
+1:00am, and Verrill is not in the retrieved set at all — before or after I
+re-chunked. So I am not setting 4 of 5 to leave myself slack on the ordinary
+questions; I am setting it because I deliberately included one question my
+retrieval design cannot satisfy, and I would rather have that in the set than
+five questions I already know pass.
 
 ---
 
@@ -63,7 +71,18 @@ Every answer the system produces names at least one source document.
          That is possible but not something the pipeline makes likely, which
          is why this one is 5 of 5 rather than 4. -->
 
-<!-- Your sentence goes here. -->
+The pipeline asks for a citation twice, not once: `GROUNDING_INSTRUCTION`
+tells the model to name the document, `build_prompt` repeats it at the end of
+every prompt, and every chunk arrives labelled `[from <filename>]` so the
+filename is never out of sight. Both answers I have run named their sources.
+With three separate things pushing in the same direction, a target of 4 of 5
+would be one I could only miss by accident, so 5 of 5 is the honest number.
+
+One thing I want to be explicit about before I measure it: a question the
+relevance gate refuses produces no sources, because it never reaches the
+model. I am counting only answers the gate let through. Refusals are what
+criterion 3 measures, and scoring them here as well would mean one event
+failing two criteria.
 
 ---
 
@@ -96,7 +115,18 @@ in at least 4 of 5 tries.
      defensible call; so is keeping 4 of 5 because the gap was measured on one
      chunking and Milestone 3 will move the distances underneath it. -->
 
-<!-- Your sentence goes here. -->
+I measured both groups, and the separation is not close. In corpus: 0.146,
+0.185, 0.206, 0.421, 0.421. Out of corpus: 0.825, 0.848, 0.877, 0.886, 0.923.
+The gap between the two runs from 0.42 to 0.83, roughly twice as wide as the
+spread inside either group, and all five out-of-corpus questions already
+refuse at the 0.6 default. On those numbers I expect 5 of 5, not 4.
+
+I am keeping 4 of 5 anyway, and I want the reason on record rather than
+discovered later: these distances are a property of one chunking, not of the
+corpus. Re-chunking in Milestone 3 moved every in-corpus distance — the
+shuttle question went from 0.412 to 0.182 — and anything I change in unit 2
+will move them again. The one number I am least willing to bet on holding
+exactly is the one I have measured exactly once.
 
 ---
 
@@ -115,6 +145,17 @@ chunk does not begin or end mid-clause.
        - That means you score 5 of 5 today without trying. The target is aimed
          at Milestone 3, where you replace the chunker and start splitting.
      One or two sentences: why 4 and not 5? -->
+
+My chunker splits on paragraph breaks, so in principle a sentence can never be
+cut in half and I should score 5 of 5. The reason I am not claiming 5 is the
+rule that props it up: paragraphs shorter than 80 characters get merged into
+the one after them. That is a length test, not a meaning test, and it can
+just as easily glue two unrelated paragraphs together — producing a chunk
+that is grammatically whole but covers two topics, which fails the spirit of
+this criterion while passing the letter of it. The shortest chunk in my
+sample, `course_cs_340_exams.txt#1` at 103 characters, is close enough to
+that line that I looked at it twice. One failure in five is the room I am
+leaving for that merge rule being wrong.
 
 ---
 
@@ -137,6 +178,19 @@ not merely that they came from a related topic.
          find. That is why this says 4 of 5 questions, not 5 of 5.
      One or two sentences: why 2 relevant and not 1 or 3? -->
 
+This is the criterion I care most about, because the first question I ever ran
+failed it. "Is the housing lottery random?" retrieved five chunks and exactly
+one was useful; the other four were parking permits, course registration, and
+two dorms with nothing to do with the lottery. The answer was right, but four
+of five retrieval slots did no work.
+
+I picked 2 and not 3 because my corpus is 88 single-topic documents, and for
+a narrow question there may honestly only be one or two chunks in existence
+that bear on it — a target of 3 would be measuring the corpus, not my
+pipeline. I picked 2 and not 1 because 1 is where I already am, and a target
+I have already met is not a target. I set it at 4 of 5 questions rather than
+5 because the dining hall comparison question retrieves five chunks from the
+wrong halls, and I do not expect any amount of chunking to fix that.
 
 
 ---
