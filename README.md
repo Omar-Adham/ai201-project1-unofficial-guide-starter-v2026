@@ -157,30 +157,100 @@ that from surviving as its own chunk.
 
 ## Sample Answer
 
-<!-- One complete question and answer, pasted as text, with the source line
-     visible. Milestone 4. -->
-
-**Question:**
+**Question:** How much does it cost to do laundry in Old Brewhouse?
 
 **Answer:**
 
 ```
+  (best distance 0.146, cutoff 0.52)
+
+Laundry in Old Brewhouse costs $1.50 to wash and $1.50 to dry.
+
+This information came from `housing_old_brewhouse.txt` and `housing_old_brewhouse_laundry.txt`.
+
+Sources retrieved: housing_aldridge_hall.txt, housing_calder_annexe.txt,
+housing_fenwick_court_laundry.txt, housing_old_brewhouse.txt,
+housing_old_brewhouse_laundry.txt
 ```
 
-**My relevance cutoff:**
+I picked this one because three of the five chunks it retrieved were laundry
+prices for the *wrong* buildings — Calder Annexe at $2.00/$1.75, Aldridge Hall
+at $1.75/$1.50, Fenwick Court at $2.00/$1.75 — and the answer is still right.
+That is the title prefix from Milestone 3 doing its job: every chunk names its
+own building, so the model can tell which price belongs to the question.
 
-<!-- The number you set in config.py, and how you got there.
+And the refusal, for contrast:
 
-     You ran five questions your corpus covers and the five in OUT_OF_SCOPE
-     that it clearly doesn't, and wrote down the best distance for each. What
-     did those two groups look like? Where was the gap? Put the actual numbers
-     here — the table below wants all ten rows.
+```
+  (best distance 0.886, cutoff 0.52)
 
-     Milestone 4. -->
+I don't have enough information about that.
+```
+
+**My relevance cutoff:** 0.52
+
+I measured three groups, not two, and the third one is what moved the number.
 
 | Question | In corpus? | Best distance |
 |---|---|---|
-|  |  |  |
+| How much does it cost to do laundry in Old Brewhouse? | yes | 0.146 |
+| How often does the campus shuttle run at weekends? | yes | 0.182 |
+| What time does the salad bar wilt at Kestrel Commons? | yes | 0.185 |
+| How late in the semester can I declare a course pass/fail? | yes | 0.206 |
+| Which dining hall is open the latest? | yes | 0.421 |
+| What are the opening hours of the campus gym? | no — near miss | 0.382 |
+| Where is the nearest pharmacy to campus? | no — near miss | 0.612 |
+| What is the policy on keeping pets in the dorms? | no — near miss | 0.639 |
+| How do I appeal a parking ticket? | no — near miss | 0.657 |
+| What counts as plagiarism here? | no — near miss | 0.762 |
+| How do I join a student society? | no — near miss | 0.770 |
+| What is the capital of Mongolia? | no | 0.825 |
+| What is the recommended dosage of ibuprofen for a headache? | no | 0.848 |
+| How do I write a for loop in Rust? | no | 0.877 |
+| Who won the 1994 World Cup? | no | 0.886 |
+| How do I change the oil in a diesel engine? | no | 0.923 |
+
+**What the groups looked like.** My five questions ran 0.146 to 0.421. The
+five `OUT_OF_SCOPE` questions ran 0.825 to 0.923. On those two groups alone
+the gap is enormous — 0.42 to 0.83, with nothing in it — and almost any number
+in the middle would have looked justified.
+
+That gap is an artefact of the `OUT_OF_SCOPE` questions being about Mongolia,
+Rust and diesel engines. Nobody asks this system those. So I wrote six
+questions a student would plausibly ask that my corpus has no document for,
+and they land between 0.382 and 0.770 — **inside** the gap.
+
+**Why 0.52.** The real decision window is between my hardest true question
+(0.421) and my closest near miss (0.612). 0.52 is the middle of it, leaving
+about 0.10 of margin on each side. The shipped 0.6 sat only 0.012 below that
+pharmacy question, which is not margin at all — one more near-miss question
+and it would have been answered from the walking-times document.
+
+**What I get wrong at 0.52.** "What are the opening hours of the campus gym?"
+scores 0.382 and passes the gate. That is *lower* than my hardest real
+question, so no threshold anywhere can separate the two — lowering the cutoff
+far enough to refuse the gym question would also refuse the dining hall one.
+This is the case the gate cannot catch, and it is exactly the case the
+grounding instruction exists for. I ran it end to end to check:
+
+```
+  (best distance 0.382, cutoff 0.6)
+
+I don't have enough information to answer your question as the opening hours
+of the campus gym are not mentioned in the provided documents.
+```
+
+The gate passed it and the second layer refused it. That is the reason for
+having two layers rather than one, and it is why I left `GROUNDING_INSTRUCTION`
+alone rather than tightening it — I tested it against the case it exists for
+and it held.
+
+**Why TOP_K stays at 5.** I tried 8 and 12 on the dining hall question, which
+is the one that needs to see more documents than it does. Neither helped:
+Verrill Street Grill, which closes at 1:00am and is the correct answer, is not
+retrieved at any top-k I tried. The embedding does not connect "latest" to
+"1:00am". Everything the larger top-k added was dorm descriptions, so raising
+it would cost precision and buy nothing.
 
 ## How I Used AI
 
