@@ -47,10 +47,25 @@ TOP_K = 5               # how many chunks to pull back per question
 #
 # LOWER IS BETTER: 0.3 is a close match, 0.9 is unrelated.
 #
-# 0.6 is a reasonable starting point, not a right answer. Milestone 4 has you
-# measure your own two groups of distances and put the cutoff in the gap.
-# Most corpora land somewhere between 0.45 and 0.75.
-THRESHOLD = 0.6
+# Measured in Milestone 4, on three groups rather than two:
+#
+#   my 5 test questions      0.146  0.185  0.206  0.421  0.421
+#   near misses (see below)  0.382  0.612  0.639  0.657  0.762  0.770
+#   OUT_OF_SCOPE             0.825  0.848  0.877  0.886  0.923
+#
+# The near misses are the group that decides this number. They are plausible
+# campus questions this corpus has no document for — gym hours, pharmacies,
+# pets in dorms, joining a society — and they land INSIDE the apparently clean
+# 0.42-to-0.83 gap that the first two groups suggest. Setting the cutoff from
+# the OUT_OF_SCOPE questions alone would have been setting it against
+# questions about Mongolia and Rust, which is not the mistake this gate is
+# for.
+#
+# The real decision window is 0.421 (my hardest true question) to 0.612 (my
+# closest near miss). 0.52 is the middle of it. The shipped 0.6 sat 0.012
+# below that near miss — close enough that one more question would have
+# slipped through.
+THRESHOLD = 0.52
 
 
 # ─── Models ──────────────────────────────────────────────────────────────────
