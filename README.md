@@ -75,15 +75,6 @@ paragraph, so there was nothing to split).
 
 ## Sample Chunks
 
-<!-- Five chunks, pasted as text. Label each one and name the file it came from
-     AND the function that produced it — the grader checks your code against
-     what you claim here.
-
-     `python app.py chunks -n 5` prints all three for you. Copy them straight
-     across.
-
-     Milestone 3. -->
-
 From `python app.py chunks -n 5`, on 159 chunks.
 
 **Chunk 1** — source: `admin_add_drop_deadline.txt#0` — produced by: `chunker.py::split_documents`
@@ -238,15 +229,6 @@ retrieved at any top-k I tried. The embedding does not connect "latest" to
 it would cost precision and buy nothing.
 
 ## How I Used AI
-
-<!-- Two specific moments. For each: what you asked for, what came back, and
-     what you changed about it.
-
-     "I asked Claude to write the chunking function from my notes. It ignored
-     the overlap, so I added that myself" is the level of detail we're after.
-     "I used AI to help me code" is not.
-
-     Milestone 5. -->
 
 **1. Writing the chunker (Milestone 3).** I used Claude Code for this, and it
 wrote the code in `chunker.py::split_documents`. What I asked for was a
