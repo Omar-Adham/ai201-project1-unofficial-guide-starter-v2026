@@ -1,6 +1,6 @@
 # The Unofficial Guide
 
-**Name:** _TODO — add your name here before submitting_
+**Name:** Omar Ibrahim Adham
 
 **Corpus:** `campus_life` — 88 short posts about student life.
 
