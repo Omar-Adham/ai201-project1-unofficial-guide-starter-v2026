@@ -300,27 +300,204 @@ MATH 220 lookup with the dining hall question that genuinely fails.
 
 ## Run Log — Before
 
-<!-- Your five criteria, three runs each. `python run_eval.py --label before`
-     runs the questions, puts the OUT_OF_SCOPE ones through the gate, and
-     writes it all into results/ for you. Targets come from criteria.md; the
-     verdict column is your call.
-
-     Criterion 3 is measured in one deterministic pass rather than three, so
-     the same number goes in all three run columns. That's correct, not lazy.
-
-     Milestone 1. -->
+Three runs of all five questions, caching off, on 2026-09-27. Raw output:
+[`results/run_2026-09-27_1152_before.md`](results/run_2026-09-27_1152_before.md),
+written by `run_eval.py::main`. Corpus `campus_life`, top-k 5, cutoff 0.52.
 
 | Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
 |---|---|---|---|---|---|
-| 1. Retrieved chunk contains the answer | 4 of 5 |  |  |  |  |
-| 2. Every answer names a source | 5 of 5 |  |  |  |  |
-| 3. Gate stops out-of-corpus questions | 4 of 5 |  |  |  |  |
-| 4. | | | | | |
-| 5. | | | | | |
+| 1. Retrieved chunk contains the answer | 4 of 5 | 4/5 | 4/5 | 4/5 | MET |
+| 2. Every answer names a source | 5 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 3. Gate stops out-of-corpus questions | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 4. Chunks read as complete thoughts | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 5. Retrieval brings back 2+ useful chunks | 4 of 5 | 3/5 | 3/5 | 3/5 | MISSED |
 
-<!-- Underneath, paste the REAL output for each criterion from one of your
-     runs — the actual text your system produced, not a description of it.
-     Name the file and function that produced it. -->
+**On the three columns being identical.** Four of my five criteria measure
+stages with no model in them — chunking, embedding, retrieval, and a gate that
+is a comparison against a fixed number — so they cannot vary between runs, and
+reporting three different numbers would mean I had a bug, not better evidence.
+The one criterion that runs through the model is criterion 2, and the three
+runs there are visibly three separate calls: the same laundry question came
+back as ``Source: `housing_old_brewhouse.txt` (also mentioned in ...)`` on run
+1, ``Sources: `housing_old_brewhouse.txt` and ...`` on run 2, and a bare
+parenthetical on run 3. `run_eval.py::run_once` passes `cache=False` for
+exactly this reason, and `generate.py` reported 15 model calls for 5 questions
+× 3 runs. The wording moved; the count didn't.
+
+---
+
+### Criterion 1 — retrieved chunk contains the answer: 4/5
+
+Produced by `store.py::search`, called from `run_eval.py::run_once`. Four
+questions retrieve a chunk holding the answer at rank 1. The fifth never
+retrieves it at all:
+
+```
+Question: Which dining hall is open the latest?
+
+#   distance   source                           preview
+----------------------------------------------------------------------------
+1   0.4215     dining_pellew_dining_hall_followup.txt Re: Pellew Dining Hall  Also worth saying: the furth...
+2   0.4557     dining_pellew_dining_hall_followup.txt Re: Pellew Dining Hall  Adding to what people have s...
+3   0.4564     dining_halden_hall_followup.txt  Re: Halden Hall  Also worth saying: closes at 7:00pm...
+4   0.4920     dining_pellew_dining_hall.txt    Pellew Dining Hall  Second-year here. Wait times: 12...
+5   0.4964     housing_aldridge_hall.txt        Aldridge Hall — what it's actually like  I lived her...
+
+Gate: best distance 0.421 is under the 0.52 cutoff
+```
+
+The answer is Verrill Street Grill, open to 1:00am. `dining_verrill_street_grill.txt`
+is not in the retrieved set, so no chunk containing the answer reaches the
+model. This is the miss I said in criteria.md I expected, and for the reason I
+said: the question needs closing times from all seven halls and TOP_K is 5.
+
+The other four, from the same function:
+
+```
+How much does it cost to do laundry in Old Brewhouse?  → housing_old_brewhouse.txt        0.1464
+What time does the salad bar wilt at Kestrel Commons?  → dining_kestrel_commons_followup.txt 0.1854
+How late in the semester can I declare a course pass/fail? → admin_pass_fail_option.txt    0.2058
+How often does the campus shuttle run at weekends?     → transit_shuttle.txt               0.1816
+```
+
+### Criterion 2 — every answer names a source: 5/5, three times over
+
+Produced by `generate.py::answer_from_chunks`. All 15 answers named at least
+one source document. One question across all three runs, to show both that it
+cited every time and that the runs were genuinely separate:
+
+```
+### How much does it cost to do laundry in Old Brewhouse? — run 1
+In Old Brewhouse, laundry costs $1.50 for a wash and $1.50 for a dry.
+
+Source: `housing_old_brewhouse.txt` (also mentioned in `housing_old_brewhouse_laundry.txt`)
+
+### How much does it cost to do laundry in Old Brewhouse? — run 2
+In Old Brewhouse, laundry costs $1.50 for a wash and $1.50 for a dry.
+
+Sources: `housing_old_brewhouse.txt` and `housing_old_brewhouse_laundry.txt`
+
+### How much does it cost to do laundry in Old Brewhouse? — run 3
+It costs $1.50 to wash and $1.50 to dry in Old Brewhouse (housing_old_brewhouse.txt and housing_old_brewhouse_laundry.txt).
+```
+
+Worth recording next to the 5/5: the dining hall answer cites a source and is
+still wrong. It says Pellew, at 8:00pm, because Pellew is the latest hall *in
+the chunks it was given*:
+
+```
+Pellew Dining Hall is open until 8:00pm daily, whereas Halden Hall closes at 7:00pm.
+
+Source: `dining_pellew_dining_hall.txt` (and `dining_halden_hall_followup.txt`)
+```
+
+Criterion 2 asks whether answers name a source, and that one does. But it means
+a citation is evidence of where an answer came from, not of whether it is
+right — and my criteria have no target that would catch this. That belongs in
+the Milestone 2 verdicts, so I am leaving it here as a note rather than
+scoring it.
+
+### Criterion 3 — gate stops out-of-corpus questions: 5/5
+
+Produced by `run_eval.py::check_out_of_scope` at cutoff 0.52, one deterministic
+pass. No model calls: a question the gate refuses never reaches the model.
+
+```
+Out-of-scope questions (the gate should refuse these):
+  refused  (best distance 0.825)  What is the capital of Mongolia?
+  refused  (best distance 0.923)  How do I change the oil in a diesel engine?
+  refused  (best distance 0.886)  Who won the 1994 World Cup?
+  refused  (best distance 0.848)  What is the recommended dosage of ibuprofen for a headache?
+  refused  (best distance 0.877)  How do I write a for loop in Rust?
+  -> gate refused 5 of 5
+```
+
+The closest of the five sits at 0.825, which is 0.305 clear of the cutoff —
+the same separation I measured in Milestone 4 of unit 1, still holding after
+re-chunking.
+
+### Criterion 4 — chunks read as complete thoughts: 5/5
+
+Produced by `chunker.py::split_documents`, sampled with `app.py::cmd_chunks`
+(`python app.py chunks -n 5`). 159 chunks total, 5 sampled by stride. No
+sentence is cut at either end of any of them:
+
+```
+Chunk 2  |  source: course_cs_340_exams.txt#1  |  produced by: chunker.py::split_documents
+CS 340 Databases — assessment
+
+Start the term project in week three, not week eight; everyone learns this the hard way.
+
+Chunk 4  |  source: housing_aldridge_hall.txt#1  |  produced by: chunker.py::split_documents
+Aldridge Hall — what it's actually like
+
+The good: closest building to the science quad, four minutes to a 9am lab.
+
+The bad: the elevator is out roughly one week per semester.
+
+Chunk 5  |  source: housing_morrow_house.txt#3  |  produced by: chunker.py::split_documents
+Morrow House — what it's actually like
+
+Laundry costs $1.50 wash, $1.25 dry, coin or card. On noise: loud until about 1am on weekends, no enforced quiet hours.
+```
+
+Chunk 5 is the case I flagged in criteria.md when I wrote this target. Laundry
+prices and noise levels are two different topics, glued together by the
+merge-short-paragraphs rule. It passes the criterion as I wrote it — nothing is
+cut mid-clause — so I am scoring it 5/5 rather than quietly marking it down
+against a stricter rule I did not write. Whether the criterion is the right one
+is a Milestone 2 question.
+
+### Criterion 5 — retrieval brings back 2+ useful chunks: 3/5 — MISSED
+
+Produced by `store.py::search` via `app.py::cmd_retrieve`. Counting chunks a
+reader could actually use to answer the question, not chunks from a related
+topic. Two questions return exactly one:
+
+```
+Question: How often does the campus shuttle run at weekends?
+
+1   0.1816     transit_shuttle.txt              Runs a loop every 20 minutes from 7am to 11pm on weekdays
+                                                and every 40 minutes on weekends.        ← the only useful one
+2   0.5032     money_jobs.txt                   On-campus work. Maximum is 20 hours a week during term.
+3   0.5443     study_library_hours.txt          Library hours. Open until 2am during term.
+4   0.5447     dining_verrill_street_grill.txt  Verrill Street Grill. Wait times: up to 30 minutes on Friday
+5   0.5503     transit_walking.txt              Walking times across campus. Add four minutes in winter.
+```
+
+```
+Question: How late in the semester can I declare a course pass/fail?
+
+1   0.2058     admin_pass_fail_option.txt       ...you can declare it as late as week eight  ← the only useful one
+2   0.4293     admin_declaring_a_major.txt      You declare at the end of your second semester
+3   0.4647     admin_add_drop_deadline.txt      You can add a course through the end of the second week
+4   0.5371     admin_graduation_requirements.txt 120 credit hours, a completed major
+5   0.5816     advising_registration.txt        Registration times are staggered by credit hours
+```
+
+Slots 2 through 5 are filled on distance alone in both cases. The shuttle
+question pulls in on-campus jobs and a burger restaurant; the pass/fail
+question pulls in four other administrative deadlines, none of which is the
+pass/fail deadline. This is the same failure I described in criteria.md from
+the housing lottery question, and it is still here.
+
+The three that pass:
+
+```
+laundry in Old Brewhouse   housing_old_brewhouse.txt (0.1464) + housing_old_brewhouse_laundry.txt (0.2105)
+                           — both give $1.50 wash, $1.50 dry
+salad bar at Kestrel       dining_kestrel_commons_followup.txt (0.1854) + dining_kestrel_commons.txt (0.2594)
+                           — both give "the salad bar wilts after 1:30"
+which dining hall latest   dining_halden_hall_followup.txt (0.4564) "closes at 7:00pm"
+                           + dining_pellew_dining_hall.txt (0.4920) "Hours are 7:00am to 8:00pm daily"
+```
+
+I want to be honest about the third one. It scores a pass because two chunks
+carry dining hall closing times, which is the material this question needs.
+Those same two chunks are what produced the wrong answer in criterion 2. So
+this criterion counts a question as satisfied while the pipeline gets it wrong,
+which tells me something about the criterion rather than about the retrieval.
+Diagnosing that is Milestone 3; recording it is this.
 
 ## Verdicts
 
