@@ -1,0 +1,37 @@
+Gate probe — cutoff 0.52, corpus campus_life
+
+Near misses — no document behind them. The gate should refuse all.
+  LET THROUGH  0.496  What are the gym opening hours?
+               top chunk: health_center.txt
+  refused      0.585  Is there a pharmacy on campus?
+               top chunk: money_textbooks.txt
+  refused      0.649  Can I keep a pet in my dorm room?
+               top chunk: housing_innisfree_hall.txt
+  refused      0.770  How do I join a student society?
+               top chunk: course_cs_340.txt
+  refused      0.580  Where do I go if I lose my student ID card?
+               top chunk: admin_wifi_and_accounts.txt
+  -> let 1 of 5 through
+
+Covered questions — a document exists. The gate should refuse none.
+  REFUSED (wrongly)  0.527  Is there a campus health centre?
+                     right doc at rank 1? yes
+  answered           0.146  What are the walk-in hours at the health centre?
+                     right doc at rank 1? yes
+  answered           0.374  When is the add/drop deadline?
+                     right doc at rank 1? yes
+  answered           0.305  How many credit hours do I need to graduate?
+                     right doc at rank 1? yes
+  answered           0.323  How late is the library open during term?
+                     right doc at rank 1? yes
+  answered           0.165  How much does laundry cost in Morrow House?
+                     right doc at rank 1? yes
+  answered           0.332  Is Aldridge Hall noisy?
+                     right doc at rank 1? no -> housing_aldridge_hall_noise.txt
+  answered           0.156  How many hours a week can I work on campus?
+                     right doc at rank 1? yes
+  -> wrongly refused 1 of 8
+
+Both kinds of error at once. Moving the cutoff trades one for the
+other — it cannot fix both, because at least one covered question
+sits further away than at least one uncovered question.

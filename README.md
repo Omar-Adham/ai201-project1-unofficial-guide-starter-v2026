@@ -501,22 +501,121 @@ Diagnosing that is Milestone 3; recording it is this.
 
 ## Verdicts
 
-<!-- MET or MISSED for each of the five, against the target you wrote last
-     unit — not a new one. Plus a sentence on how you decided. That sentence
-     matters most where it was close.
-
-     If your target said 4 of 5 and your runs came out 4, 3, 4, that's a MISS.
-     The target has to hold, not show up occasionally.
-
-     Milestone 2. -->
+Scored against the targets in `criteria.md` as written in unit 1, not against
+anything I rewrote after seeing the numbers.
 
 | # | Criterion | Verdict | How I decided |
 |---|---|---|---|
-| 1 |  |  |  |
-| 2 |  |  |  |
-| 3 |  |  |  |
-| 4 |  |  |  |
-| 5 |  |  |  |
+| 1 | Retrieved chunk contains the answer | **MET** | 4 of 5, which is the target exactly and not one more. Four questions return a chunk holding the answer at rank 1; the dining hall question never retrieves `dining_verrill_street_grill.txt` at all. No margin — one regression anywhere else and this is a miss. |
+| 2 | Every answer names a source | **MET** | 15 of 15 answers named a source file, so 5/5 on all three runs. Not close, and the only argument against it is about what the criterion fails to ask, not about whether it held. |
+| 3 | Gate stops out-of-corpus questions | **MET** | 5 of 5, every `OUT_OF_SCOPE` question refused with the nearest at 0.825 against a 0.52 cutoff. It is MET on the list the criterion names, and I am leaving it MET — but I found a question the gate does not stop, and I have revised the criterion rather than the verdict. See below. |
+| 4 | Chunks read as complete thoughts | **MET** | MET under both readings of it, which is the problem: 5 of 5 by the criterion's own words, 4 of 5 by the reasoning I wrote underneath them. Revised for that, not for the score. |
+| 5 | Retrieval brings back 2+ useful chunks | **MISSED** | 3 of 5 against a target of 4. The shuttle and pass/fail questions each return exactly one useful chunk out of five. A stricter reading gives 2 of 5; there is no reading that gives 4. |
+
+### Where I argued myself out of a verdict, and where I didn't
+
+**Criterion 1 — the tempting mistake is calling it a clean pass.** It is a pass,
+but it is a pass with zero margin against a target I set *after* measuring
+retrieval in unit 1, knowing this question would fail. I still think including
+a question I knew would fail was the right call. But "4 of 5, target 4 of 5"
+means this criterion currently cannot absorb a single regression, and I would
+rather write that down now than discover it after the fix in Milestone 3.
+
+I also checked the thing that would have let me off the hook: whether the
+dining hall answer is even in the corpus. It is.
+
+```
+Hours are 11:00am to 1:00am daily during term.   dining_verrill_street_grill.txt
+```
+
+Seven dining halls, and Verrill closes at 1:00am against a next-latest of
+9:00pm. The chunk exists and is never retrieved, so this is a retrieval
+failure and not a corpus gap. That matters for Milestone 3: it means the fix
+is in the retrieval stage, not in the documents.
+
+**Criterion 2 — the argument against it is real but it is not an argument
+about this criterion.** The strongest case is the dining hall answer: it cites
+`dining_pellew_dining_hall.txt`, and it is wrong. If a citation can sit on a
+wrong answer, what is 5/5 worth?
+
+But I checked whether the citation was at least *accurate* for the claim it
+made, and it is — Pellew's document does say 7:00am to 8:00pm. The answer is
+wrong because the right document was never retrieved, not because the model
+misattributed anything. Criterion 2 asks whether answers name a source. They
+did, 15 times out of 15. What this shows is that my five criteria have no
+target that catches a confident wrong answer, which is a gap in the *set* and
+belongs in What I'd Do Differently — not a defect in criterion 2, and not a
+reason to call a pass a fail.
+
+**Criterion 5 — I tried to argue it up to 4 and could not.** The two ways to
+get there both fail on the words I wrote. For the pass/fail question, the
+add/drop chunk is a deadline, but it is a different deadline and it cannot
+help you answer this one; the criterion explicitly excludes chunks that "came
+from a related topic." For the shuttle question, walking times across campus
+might inform whether you bother waiting, but they say nothing about how often
+the shuttle runs.
+
+Pushing the other way is easier. The dining hall question counts as a pass
+because two chunks carry closing times — and those are the same two chunks
+that produced the wrong answer. If "help answer it" means help reach the
+*right* answer, this is 2 of 5. I scored it 3 because that is the more
+generous reading and it still misses. A verdict that survives its own
+best counter-argument is the one I trust.
+
+### The number that surprised me
+
+Not one from the run log. Criterion 3 came back 5 of 5 with a 0.3 margin, and
+that looked too comfortable, so I wrote `tools/gate_probe.py` to push on it —
+it runs the *near misses*, the plausible campus questions with no document
+behind them, which `config.py` says are the ones that actually decide the
+cutoff. Full output in
+[`results/gate_probe_2026-09-27.txt`](results/gate_probe_2026-09-27.txt),
+produced by `tools/gate_probe.py::main` over `store.py::search` and
+`gate.py::check`. No model calls.
+
+```
+Near misses — no document behind them. The gate should refuse all.
+  LET THROUGH  0.496  What are the gym opening hours?
+               top chunk: health_center.txt
+  refused      0.585  Is there a pharmacy on campus?
+  refused      0.649  Can I keep a pet in my dorm room?
+  refused      0.770  How do I join a student society?
+  refused      0.580  Where do I go if I lose my student ID card?
+  -> let 1 of 5 through
+```
+
+There is no gym document in this corpus — `grep -ril "gym"` over all 88
+documents returns nothing. So the gate let through a question it should have
+stopped, and handed the model the health centre's walk-in hours to answer a
+question about a gym. That is the exact shape of a confident wrong answer.
+
+Then the other side, which I only thought to run because criterion 3 counts
+refusals and nothing else — meaning a gate that refuses *everything* scores a
+perfect 5 of 5 on it:
+
+```
+Covered questions — a document exists. The gate should refuse none.
+  REFUSED (wrongly)  0.527  Is there a campus health centre?
+                     right doc at rank 1? yes
+  answered           0.146  What are the walk-in hours at the health centre?
+                     right doc at rank 1? yes
+  -> wrongly refused 1 of 8
+```
+
+Those two questions are about **the same document**, and it is retrieved at
+rank 1 for both. Asked as a specific fact it scores 0.146. Asked as a yes/no
+existence question it scores 0.527 and gets refused. The distance is tracking
+the shape of the question, not whether the corpus can answer it.
+
+Now read the two probes together. The covered question sits at 0.527; the
+uncovered gym question sits at 0.496. The one I should answer is *further
+away* than the one I should refuse. They are in the wrong order, so no cutoff
+anywhere separates them — moving the threshold trades one error for the other
+and cannot fix both.
+
+I spent unit 1 Milestone 4 tuning that threshold, and wrote 25 lines in
+`config.py` justifying 0.52. I expected to find the number was slightly off. I
+found that the number cannot do the job I was tuning it for.
 
 ## Diagnoses
 

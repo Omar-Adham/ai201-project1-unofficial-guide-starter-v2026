@@ -128,6 +128,38 @@ shuttle question went from 0.412 to 0.182 — and anything I change in unit 2
 will move them again. The one number I am least willing to bet on holding
 exactly is the one I have measured exactly once.
 
+> **Revised in unit 2:** Both halves have to hold.
+>
+> (a) The gate refuses at least 9 of 10 questions my documents don't cover —
+> the five in `OUT_OF_SCOPE` plus five *near misses*, plausible campus
+> questions with no document behind them.
+>
+> (b) The gate refuses none of the questions my documents do cover, measured
+> on at least eight, asked in more than one shape — yes/no existence
+> questions as well as specific-fact questions.
+>
+> **Why revised:** the original measures the wrong thing, and I can show it
+> rather than assert it. As written, it counts refusals and nothing else, so
+> setting `THRESHOLD` to 0 scores it a perfect 5 of 5 — a gate that refuses
+> every question in the world, including all five of my test questions, is
+> the *best possible* system by this criterion. A target that a completely
+> broken system maximises is not measuring what I wanted it to measure.
+>
+> The second defect is the population. The original scores the gate on
+> questions about Mongolia and Rust, which is the easiest case there is. On
+> the near misses it does not look at, the gate let this one through:
+>
+>     LET THROUGH  0.496  What are the gym opening hours?
+>                  top chunk: health_center.txt
+>
+> There is no gym document in the corpus — `grep -ril "gym"` over all 88
+> documents returns nothing — so the gate handed the model the health
+> centre's walk-in hours to answer a question about a gym.
+>
+> **What it scores now:** (a) 9 of 10 — passes. (b) **fails**, 1 wrongly
+> refused of 8. I am revising to a criterion I currently miss, which is the
+> point: the original was passing while the gate had a hole in it.
+
 ---
 
 ## 4. Chunks read as complete thoughts
@@ -156,6 +188,38 @@ this criterion while passing the letter of it. The shortest chunk in my
 sample, `course_cs_340_exams.txt#1` at 103 characters, is close enough to
 that line that I looked at it twice. One failure in five is the room I am
 leaving for that merge rule being wrong.
+
+> **Revised in unit 2:** For at least 4 of 5 chunks sampled with
+> `python app.py chunks -n 5`, both hold: no sentence is cut in half at
+> either end, **and** the chunk is about one thing — I can say what the chunk
+> covers in a single phrase without using "and".
+>
+> **Why revised:** I scored this criterion two different ways in two days, off
+> the same five chunks, and both scores were defensible readings of what I
+> wrote. The criterion line defines a complete thought as "no sentence is cut
+> in half at either end", and by that test this chunk passes:
+>
+>     Morrow House — what it's actually like
+>
+>     Laundry costs $1.50 wash, $1.25 dry, coin or card. On noise: loud until
+>     about 1am on weekends, no enforced quiet hours.
+>
+> But the paragraph directly underneath the criterion says the merge rule can
+> produce "a chunk that is grammatically whole but covers two topics", and
+> calls that a failure — it is the whole reason I set 4 of 5 instead of 5 of
+> 5. That chunk is laundry pricing merged with noise levels. It is the case I
+> budgeted for. So the criterion says 5 of 5 and my reasoning for the
+> criterion says 4 of 5, and neither is a misreading.
+>
+> The revision folds the intent into the line so there is one test instead of
+> two. It does not move the target and it does not change the verdict: 5 of 5
+> under the letter, 4 of 5 under the intent, and MET either way.
+>
+> **One thing the revision does not fix.** `cmd_chunks` samples by stride, so
+> `-n 5` returns the same five chunks every time — it is not a random sample,
+> and it cannot see a chunker regression in the other 154. Fixing that means
+> changing how the sample is drawn, which is a change to `app.py` rather than
+> to the criterion, so I am recording it here instead of revising twice.
 
 ---
 
