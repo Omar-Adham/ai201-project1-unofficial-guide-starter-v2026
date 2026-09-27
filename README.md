@@ -619,23 +619,204 @@ found that the number cannot do the job I was tuning it for.
 
 ## Diagnoses
 
-<!-- For each miss: which stage caused it, and how. The stage alone isn't
-     enough — you need the mechanism.
+Three things to diagnose, not one: criterion 5, which I missed outright; the
+revised criterion 3, which I now fail; and the single miss inside criterion 1,
+which passed but only because I had budgeted for exactly that failure.
 
-     Not a diagnosis: "Question 3 didn't work."
-     A diagnosis:     "Question 3 asks about laundry costs. The answer is in
-                       one sentence that got split across two chunks, so
-                       neither chunk on its own contains it."
+Evidence for all three: [`results/rank_probe_2026-09-27.txt`](results/rank_probe_2026-09-27.txt)
+(`tools/rank_probe.py`) and [`results/gate_probe_2026-09-27.txt`](results/gate_probe_2026-09-27.txt)
+(`tools/gate_probe.py`). Neither makes a model call.
 
-     The five stages: loading → chunking → embedding → retrieval → generation.
+### The pattern, first
 
-     Look for a pattern. If three misses all ask about numbers, that's one
-     problem, not three.
+All three failures are the same defect showing up at two stages. **My pipeline
+treats embedding distance as if it measured "does this chunk contain the
+answer". It measures "is this chunk phrased like this question".** Every miss
+is a place where those two come apart, and they come apart in both directions:
 
-     Missed nothing? Say so, then say honestly whether your targets were set
-     low, and which one you'd tighten and to what.
+| | phrasing matches | phrasing doesn't match |
+|---|---|---|
+| **answer present** | the three questions that work | Verrill at rank 78; health centre refused at 0.527 |
+| **answer absent** | gym question let through at 0.496 | correctly refused — the easy case `OUT_OF_SCOPE` tests |
 
-     Milestone 3. -->
+The top-left is the only box my system handles, and it is the only box my
+original criteria measured.
+
+There is a sharper version of the pattern. Two of my failures are questions
+that are not passage lookups at all:
+
+- *"Which dining hall is open the latest?"* is a **comparison** — it needs
+  seven closing times ordered against each other.
+- *"Is there a campus health centre?"* is an **existence check** — it needs a
+  yes/no about the whole corpus.
+
+Neither is answerable by finding one passage that resembles the question, and
+finding one passage that resembles the question is the only operation my
+system has. That is one problem, not two, and no amount of tuning `TOP_K` or
+`THRESHOLD` reaches it.
+
+### Miss 1 — criterion 5, 3 of 5. Stage: **retrieval**
+
+The mechanism is in one line. `gate.py::check`, line 57:
+
+```python
+best = min(r.distance for r in results)
+```
+
+The gate looks at the *single closest* chunk and then lets all five through.
+`store.py::search` returns exactly `TOP_K` chunks whatever their distance.
+So nothing anywhere in the pipeline inspects chunks 2 through 5 — they are
+returned unconditionally, and the model is handed them as if they were
+evidence.
+
+That does no harm when the corpus holds five relevant chunks. It does exactly
+this when it holds one:
+
+```
+How often does the campus shuttle run at weekends?
+  0.1816  transit_shuttle.txt        ← the answer
+  0.5032  money_jobs.txt             ← on-campus work hours
+  0.5443  study_library_hours.txt
+  0.5447  dining_verrill_street_grill.txt
+  0.5503  transit_walking.txt
+```
+
+The distance profile says plainly that slots 2–5 are padding. Compare the
+jump from rank 1 to rank 2 across all five questions:
+
+| Question | rank 1 → rank 2 | criterion 5 |
+|---|---|---|
+| Which dining hall is open latest | 0.4215 → 0.4557 (**+0.03**) | pass |
+| Laundry in Old Brewhouse | 0.1464 → 0.2105 (**+0.06**) | pass |
+| Salad bar at Kestrel | 0.1854 → 0.2594 (**+0.07**) | pass |
+| Pass/fail deadline | 0.2058 → 0.4293 (**+0.22**) | **fail** |
+| Shuttle at weekends | 0.1816 → 0.5032 (**+0.32**) | **fail** |
+
+The two failures are the two cliffs, and the separation is clean — 0.07
+against 0.22. The cliff is the system telling me it ran out of relevant
+material and kept going anyway, and nothing is reading that signal.
+
+**Why those two questions and not the others.** This is the part I did not
+expect. Only **7 of my 88 documents** have a `_followup` companion. Laundry
+and Kestrel pass because they happen to sit in the redundant families — Old
+Brewhouse has both a dorm document and a dedicated laundry document, Kestrel
+has two followups. `transit_shuttle.txt` and `admin_pass_fail_option.txt` are
+singletons; `ls transit*` returns two files for the entire transit topic.
+
+So which questions pass criterion 5 is decided by whether their topic happened
+to get a second document written about it. That is a property of the corpus,
+not of anything I built.
+
+**The uncomfortable consequence.** A relevance floor on chunks 2–5 is the
+obvious fix and it will not move this criterion. It would correctly stop
+returning `money_jobs.txt` for a shuttle question — but the shuttle answer
+exists in exactly one chunk in the corpus, so filtering leaves one, and
+criterion 5 demands two. The fix improves the answers and the criterion stays
+missed.
+
+The only way to get a second relevant chunk for the shuttle question is to
+make one, by reinstating `CHUNK_OVERLAP` (currently 0) so the frequency
+sentence lands in two adjacent chunks. That would satisfy the criterion's
+letter with two chunks containing the same sentence, which is not what I meant
+by "2 relevant chunks" when I wrote it. I am recording that here rather than
+doing it, and choosing the fix in Milestone 4.
+
+### Miss 2 — revised criterion 3. Stage: **embedding**
+
+Same document, same rank 1, two ways of asking:
+
+```
+  answered           0.146  What are the walk-in hours at the health centre?
+  REFUSED (wrongly)  0.527  Is there a campus health centre?
+```
+
+`health_center.txt` is retrieved at rank 1 for both. The distance moves by
+**0.38 on the phrasing of the question alone**, while the corpus, the chunk
+and the retrieval are identical. That is the whole diagnosis: the number the
+gate reads is a function of how the question is worded, and the gate is being
+asked to interpret it as whether the corpus can answer.
+
+The mechanism is that `all-MiniLM-L6-v2` embeds a question near passages with
+similar content words. "Walk-in hours" appears nearly verbatim in the
+document. "Is there a..." has almost no content words to match — an existence
+question is mostly grammar — so it drifts away from a document that is
+entirely specifics.
+
+The same mechanism causes the false pass. "What are the gym opening hours?" is
+shaped exactly like an in-corpus hours question, so it lands 0.496 from the
+health centre's opening hours despite there being **no gym document at all**
+(`grep -ril "gym"` over 88 documents returns nothing).
+
+And then the two errors sit in the wrong order: 0.496 for the question I
+should refuse, 0.527 for the question I should answer. **There is no value of
+`THRESHOLD` that separates them.** Every cutoff either lets the gym question
+through or refuses the health centre question, or both. This is not a badly
+chosen number; it is a number that cannot express the distinction, and I spent
+unit 1 Milestone 4 and 25 lines of `config.py` choosing it.
+
+### Also diagnosed — criterion 1's one miss. Stage: **embedding**, and my unit 1 diagnosis was wrong
+
+Criterion 1 passed, so this is not a miss against a target. I am diagnosing it
+because I wrote down a cause in unit 1 and it turns out to be false, which is
+worth more than a diagnosis I got right.
+
+In `criteria.md` I wrote: *"answering it needs the closing times of all seven
+dining halls, and TOP_K is 5. Verrill was not in the top 5 at all."* True, and
+it reads like a `TOP_K` problem. It is not:
+
+```
+Which dining hall is open the latest?
+  answer should be in dining_verrill_street_grill.txt, containing '11:00am to 1:00am'
+  -> rank 78 of 159   distance 0.7860   MISSED — outside TOP_K
+     TOP_K would have to be 78 to reach it (49% of the corpus)
+```
+
+The answer chunk is in the **bottom half** of the corpus for the question it
+answers, at 0.786 — further away than four of my five `OUT_OF_SCOPE` questions
+about Mongolia and Rust. Raising `TOP_K` from 5 to 20 does nothing. Reaching
+it means retrieving half the corpus, and at that point retrieval has stopped
+being retrieval.
+
+The mechanism: the chunk reads `Hours are 11:00am to 1:00am daily during
+term.` The question asks which hall is open *latest*. Ordering 1:00am after
+8:00pm is arithmetic, and embedding similarity has no arithmetic in it — the
+two strings share no content words, so the model has no way to connect them.
+The chunks that *do* come back are generic dining-hall prose, which resembles
+a generic dining-hall question closely.
+
+One correction to my own method while I am here. My first pass at this probe
+searched for the string `1:00am` and reported a hit in `dining_north_kitchen.txt`
+at rank 12, which would have suggested the answer was nearly retrieved. North
+Kitchen closes at 7:00pm; the match was the `1:00am` inside `11:00am`. I now
+match on document as well as text, and `tools/rank_probe.py` says why in its
+docstring. The rank-78 figure is from the corrected probe.
+
+### On the four I met
+
+Four of five on the first try is the result that should make me suspicious,
+and two of them do not survive a second look.
+
+**Criterion 2 was set low and I would tighten it.** 15 of 15 was never in
+doubt: the instruction to cite is sent twice, every chunk arrives labelled
+with its filename, and nothing in the pipeline pushes the other way. I said so
+in `criteria.md` when I set it. It is satisfied by the dining hall answer,
+which cites a real document accurately and is wrong.
+
+> **Would tighten to:** every answer names a source, **and** the claim it
+> makes is supported by the document it cites — checked by reading the cited
+> document, on all five questions.
+
+I have not revised it in `criteria.md`, because it measured what it said it
+measured and I only missed the fact that what it said was not worth much.
+Lowering the bar is forbidden and raising it after the fact is not much
+better, so it stays at 5 of 5 for this unit and the tightening is a proposal.
+
+**Criterion 1 passed with zero margin against a target I set knowing this
+question would fail**, and the failure is worse than the one I budgeted for —
+rank 78 rather than rank 6. The target held, but it held over a hole.
+
+Criteria 3 and 4 are revised in `criteria.md` with reasons. Criterion 5 is
+the one I missed honestly.
 
 ## The Improvement
 

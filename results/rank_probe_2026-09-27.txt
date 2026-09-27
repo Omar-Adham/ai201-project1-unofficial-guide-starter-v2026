@@ -1,0 +1,27 @@
+Rank probe — corpus campus_life, TOP_K in use is 5
+
+==========================================================================
+Which dining hall is open the latest?
+  answer should be in dining_verrill_street_grill.txt, containing '11:00am to 1:00am'
+  159 chunks ranked
+  -> rank 78 of 159   distance 0.7860   MISSED — outside TOP_K
+     TOP_K would have to be 78 to reach it (49% of the corpus)
+
+==========================================================================
+How often does the campus shuttle run at weekends?
+  answer should be in transit_shuttle.txt, containing 'every 40 minutes on weekends'
+  159 chunks ranked
+  -> rank 1 of 159   distance 0.1816   inside TOP_K
+
+==========================================================================
+How late in the semester can I declare a course pass/fail?
+  answer should be in admin_pass_fail_option.txt, containing 'as late as week eight'
+  159 chunks ranked
+  -> rank 1 of 159   distance 0.2058   inside TOP_K
+
+==========================================================================
+Is there a campus health centre?
+  answer should be in health_center.txt, containing 'Walk-in hours'
+  159 chunks ranked
+  -> rank 1 of 159   distance 0.5272   inside TOP_K
+
