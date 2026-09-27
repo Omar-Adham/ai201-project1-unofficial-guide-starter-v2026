@@ -285,6 +285,62 @@ the corpus before committing to them — all five came back answerable at rank 1
 which would have made "4 of 5" a target I could not miss, so I replaced the
 MATH 220 lookup with the dining hall question that genuinely fails.
 
+### Unit 2
+
+**3. Arguing against my own verdicts (Milestone 2).** The most useful thing I
+did this unit. Criterion 3 came back 5 of 5 with a 0.3 margin and I was about
+to write MET and move on, so I handed over the criterion, the target, the runs
+and my verdict and asked for the strongest case that I was wrong. The case that
+came back was not about the number: it was that the criterion counts refusals
+and nothing else, so setting `THRESHOLD` to 0 scores a perfect 5 of 5 while
+refusing every question I own. A target a completely broken system maximises is
+measuring the wrong thing.
+
+That argument is what produced `tools/gate_probe.py` and the finding the whole
+unit turned on — the gate lets "what are the gym opening hours?" through at
+0.496 with no gym document in the corpus, and refuses "is there a campus health
+centre?" at 0.527 with `health_center.txt` at rank 1. The verdict stayed MET,
+because it is MET on the list the criterion names. The criterion got revised
+instead, to a version I currently fail.
+
+I want to be accurate about what was new here. My unit 1 notes above already
+record the gym question scoring below my hardest real question. What I had not
+seen was the other side: a question the corpus *does* cover being refused, and
+the two landing in the wrong order, which is what makes it unfixable by moving
+the cutoff.
+
+**4. Checking a fix before building it (Milestone 4).** I was going to re-chunk.
+The Verrill document splits "the only late-night hot food on campus" away from
+"Hours are 11:00am to 1:00am", and merging them looked obviously right. Before
+writing any of it I had the two candidate chunks and the merged version embedded
+and measured against the question. Merged scored 0.7299 — worse than the prose
+chunk alone at 0.7193, and nowhere near Pellew at 0.4919. That was about ten
+minutes and it saved the milestone.
+
+**5. Where I pushed back.** Three things this unit that I had to correct rather
+than accept:
+
+- The first rank probe searched for the bare string `1:00am` and reported a hit
+  in `dining_north_kitchen.txt` at rank 12, which would have said the answer was
+  nearly retrieved. North Kitchen closes at 7:00pm — the match was the `1:00am`
+  inside `11:00am`. The probe now matches on source document as well as text,
+  and the real figure is rank 78.
+- The first gate probe had "Is there a campus health centre?" in both the
+  near-miss list and the covered list, so it was counted as a correct refusal
+  and a wrong refusal at the same time. It is covered; it belongs in one list.
+- The suggested lexical signal was BM25, which `requirements.txt` already ships.
+  Working through what it would do to the gate, BM25 has to be normalised per
+  query to be blended onto a distance scale, and that hands the best chunk a
+  perfect score even when it is the least-bad of 159 irrelevant ones — the gym
+  question would have looked like a direct hit. That is why `lexical.py` uses
+  absolute IDF-weighted coverage instead, and why the docstring explains it.
+
+**6. What I did not delegate.** Which criterion to revise and which to leave
+alone; the decision not to buy criterion 2's point back with a prompt tweak;
+the decision not to reinstate `CHUNK_OVERLAP` to pass criterion 5 with two
+copies of the same sentence. Those are judgement calls about what my own
+criteria mean, and they are the part of this unit that is actually mine.
+
 <!-- ── Stretch features ─────────────────────────────────────────────────────
      Doing one? Say so here BEFORE you start. A feature this README never
      claims earns nothing.
@@ -982,17 +1038,143 @@ rebuild.
 
 ## What's Still Broken
 
-<!-- For each criterion still missed after your fix: what you'd do about it,
-     and why you stopped where you did.
+Two criteria missed after the fix, one of them newly. Plus one question that
+fails inside a criterion that passes, which I am counting as broken because it
+is.
 
-     "I ran out of time" is fine if it's true. Pretending nothing is left is
-     not.
+### Criterion 2 — every answer names a source. 4 of 5, MISSED
 
-     Milestone 5. -->
+**What broke it.** One answer in fifteen:
+
+```
+I do not have enough information to determine which dining hall is open the
+latest, as the provided documents only contain information for Pellew Dining
+Hall.
+```
+
+No filename. The gate passed this question at 0.510, so it reached the model
+and counts as an answer under the rule I wrote in `criteria.md` — I am counting
+only answers the gate let through, and this is one.
+
+**What I'd do.** Not the obvious thing. The obvious thing is a line in
+`GROUNDING_INSTRUCTION` telling the model to name a file even when it declines,
+which would take two minutes and buy the point back. I think that would be
+fixing the scoreboard rather than the system: this answer is a *refusal*, and
+the reason my criteria disagree about it is that the pipeline has two kinds of
+refusal and only knows about one. `gate.REFUSAL` is a refusal the code makes
+and the criteria understand. "I don't have enough information to determine
+which..." is a refusal the *model* makes, and nothing in the pipeline
+recognises it as one — it is handled as an answer, counted as an answer, and
+scored as an answer missing a citation.
+
+So the real fix is in `app.py::ask_pipeline`: give the model a way to signal a
+refusal that the code can see, and route it to the same outcome as a gate
+refusal. That is a change to the generation contract, not a prompt tweak.
+
+**Why I stopped.** I had spent my one change, and changing the prompt in the
+same unit as the retrieval change would have made the after-numbers
+uninterpretable — the same reason I left `THRESHOLD` alone. I would rather
+report a miss I can explain than a pass I cannot attribute.
+
+### Criterion 5 — 2 of 5 relevant chunks. MISSED, and further out than before
+
+**What I'd do — and why every option is bad.** I worked through four:
+
+1. **A relevance floor on chunks 2–5.** The fix the diagnosis actually points
+   at, and it makes this criterion *worse*, not better. Dropping the padding
+   leaves the shuttle question with one chunk, and "1 of 1 relevant" does not
+   satisfy "at least 2 of the 5 retrieved are relevant." It would improve the
+   system and lower the score.
+2. **Reinstate `CHUNK_OVERLAP`** so the shuttle's frequency sentence lands in
+   two adjacent chunks. This would pass the criterion with two chunks
+   containing the same sentence. That is gaming the letter of something I
+   wrote, and I would rather miss it.
+3. **Write more documents.** `transit_shuttle.txt` has no companion; only 7 of
+   my 88 documents do. Adding one would work and would be measuring my typing,
+   not my pipeline.
+4. **Rewrite the criterion.** Not allowed, and not right — I missed this
+   number, I did not fail to measure it.
+
+**Why I stopped.** Because the honest answer is that no retrieval change
+reaches 4 of 5 here. Two of my five questions have exactly one chunk in the
+entire corpus that bears on them, and a retriever cannot return a second
+relevant chunk that does not exist. I predicted this in Milestone 3 before
+making the change, and the after-run confirmed it. Option 1 is what I would
+actually ship, accepting that it scores worse.
+
+### Still broken inside a criterion that passed — the dining hall question
+
+Criterion 1 holds at 4 of 5, so this costs me nothing, which is exactly why I
+am writing it down. The question has now failed under two different retrieval
+schemes and moved *away* under the second: rank 78 of 159 before, rank 81
+after.
+
+**What I'd do.** Nothing in the retrieve-then-answer shape fixes it, because
+"which dining hall is open the latest?" is not a passage lookup — it needs
+seven closing times collected and ordered. The fix is a different pipeline
+shape: recognise the comparison, retrieve by *topic* rather than by similarity
+(all seven documents whose filename starts `dining_`), and let the model do the
+ordering over the full set. That is a new retrieval mode, not a tuning change.
+
+**Why I stopped.** It is a second system rather than a fix to this one, and the
+milestone asked for one change measured properly. I would rather have the
+rank-78 number and a clear account of why the obvious fixes fail than a
+half-built router.
+
+### One thing that is fragile rather than broken
+
+`ALPHA` in `lexical.py` is 0.5 and I never tuned it — deliberately, since I have
+no held-out questions to tune against and tuning on the five I measure would
+make the measurement worthless. But the dining hall question now sits at 0.510
+against a 0.52 cutoff. That is 0.010 of margin, and if it drifted over, the
+gate would refuse a question my corpus *can* partly answer. Nothing has gone
+wrong yet. It is the number I would watch first.
 
 ## What I'd Do Differently
 
-<!-- Knowing what you know now — which of your five criteria would you write
-     differently, and why?
+**Criterion 2 is the one I got most wrong, and it took a fix to show it.** It
+asks whether an answer names a source. It cannot tell the difference between a
+citation that supports the claim and a citation sitting on a confidently wrong
+answer — the before-run's dining hall answer cited `dining_pellew_dining_hall.txt`
+accurately and was wrong — and it actively penalises the system for refusing
+honestly, which is how I lost the point in the after-run. It rewards exactly
+the behaviour I least want. Next time:
 
-     Milestone 5. -->
+> Every answer either names a source whose document supports the claim it
+> makes, or declines to answer. Checked by reading the cited document.
+
+**Criterion 5 measures my corpus at least as much as my pipeline.** I half-knew
+this when I wrote it — I said a target of 3 relevant chunks "would be measuring
+the corpus, not my pipeline" — and then set 2 and measured the corpus anyway.
+Which questions pass turns on whether their topic happened to get a second
+document written about it. What I actually wanted was that retrieval not waste
+slots, and that is a property of the retrieved set rather than a count of
+relevant documents:
+
+> No chunk passed to the model is more than 0.15 further away than the best
+> one. (My Milestone 3 numbers: the passes cluster at +0.03 to +0.07, the
+> failures fall off a cliff at +0.22 and +0.32.)
+
+That version is satisfied by returning one chunk when only one is relevant,
+which is the behaviour I want and the behaviour the current wording punishes.
+
+**Criterion 1 should have named a rank.** "The retrieved chunks include one
+that contains the answer" is binary, so it scored the dining hall question the
+same way whether the answer sat at rank 6 or rank 78. Those are different
+failures wanting different fixes, and my criterion could not tell them apart —
+which is how I spent unit 1 believing `TOP_K` was the problem. I would write
+"within the top 5 of a corpus-wide ranking, and record where it actually landed
+when it isn't."
+
+**The biggest gap is a criterion I never wrote.** All five of mine can pass
+while the system returns a wrong answer, and in the before-run all five did
+exactly that. Nothing I set measures whether the answer is *correct*. I have
+the `expects` field sitting in `questions.py` and never built a criterion
+around it. Next unit that is the first one I write, and it is what `scorer.py`
+should be checking.
+
+**One thing I would keep.** Deliberately including a question I knew my design
+could not answer was the best decision I made in unit 1. It is the only reason
+I found the rank-78 result, the falsified `TOP_K` diagnosis, and the
+comparison-vs-lookup distinction that explains three of my failures. Four
+comfortable questions would have taught me nothing.
