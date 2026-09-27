@@ -820,34 +820,165 @@ the one I missed honestly.
 
 ## The Improvement
 
-**What I changed:**
+**What I changed:** hybrid retrieval. `store.py::search` now pulls 50
+candidates from the vector store instead of 5, re-scores each one by blending
+its embedding distance with a lexical score, and returns the best 5 of those.
+The lexical half is in the new `lexical.py`; the blend is
+`0.5 × semantic + 0.5 × (1 − coverage)`, where coverage is the IDF-weighted
+fraction of the question's content words that appear in the chunk. One change,
+in one stage: retrieval. Chunking, embedding, the prompt and `THRESHOLD` are
+all untouched.
 
-**Why I picked it:**
+**Why I picked it:** my diagnosis said the gate could not separate *"what are
+the gym opening hours?"* (0.496, no gym document exists) from *"is there a
+campus health centre?"* (0.527, `health_center.txt` exists) because embedding
+distance measures phrasing rather than coverage — and the word `gym` appears in
+0 of 159 chunks, which is exactly the evidence a lexical signal has and an
+embedding does not.
 
-<!-- Connect it to a specific diagnosis above in one sentence. If you can't,
-     you picked a fix because it sounded impressive. -->
+**Why not BM25, which is already in `requirements.txt`.** I tried it first. BM25
+scores are unbounded and only meaningful relative to other chunks *for the same
+query*, so blending one onto a distance scale means normalising per query — and
+that hands the best chunk a perfect score whether it is a real match or the
+least-bad of 159 irrelevant ones. The gym question would come out looking like a
+direct hit, which is the precise failure I was trying to fix. IDF-weighted
+coverage is absolute, so a query term that appears nowhere holds the score down
+permanently. Full reasoning in `lexical.py`'s docstring.
+
+**What I tested before building anything.** My first instinct was a second
+chunking strategy — the Verrill document splits the phrase "the only late-night
+hot food on campus" away from "Hours are 11:00am to 1:00am", so merging them
+looked like it would rescue the dining hall question. I measured it before
+writing it:
+
+```
+query: Which dining hall is open the latest?
+  0.7860  current chunk: hours only (rank 78)
+  0.7193  current chunk: prose only (has 'late-night')
+  0.7299  MERGED whole document
+  0.4919  for comparison — Pellew whole doc (currently wins at 0.4215)
+```
+
+Merging lands at 0.7299 — worse than the prose chunk alone, and nowhere near
+Pellew. That fix would have failed, and I would have spent the 90 minutes
+finding out.
 
 ### Run Log — After
 
-<!-- Same format, same five criteria, three runs each.
-     `python run_eval.py --label after` -->
+`python run_eval.py --label after`, three runs, caching off, 15 model calls.
+Raw output: [`results/run_2026-09-27_1223_after.md`](results/run_2026-09-27_1223_after.md).
 
 | Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
 |---|---|---|---|---|---|
-| 1. Retrieved chunk contains the answer | 4 of 5 |  |  |  |  |
-| 2. Every answer names a source | 5 of 5 |  |  |  |  |
-| 3. Gate stops out-of-corpus questions | 4 of 5 |  |  |  |  |
-| 4. | | | | | |
-| 5. | | | | | |
+| 1. Retrieved chunk contains the answer | 4 of 5 | 4/5 | 4/5 | 4/5 | MET |
+| 2. Every answer names a source | 5 of 5 | 5/5 | 5/5 | **4/5** | **MISSED** |
+| 3. Gate stops out-of-corpus questions | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 4. Chunks read as complete thoughts | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 5. Retrieval brings back 2+ useful chunks | 4 of 5 | **2/5** | **2/5** | **2/5** | **MISSED** |
+
+Side by side:
+
+| Criterion | Before | After | |
+|---|---|---|---|
+| 1. Retrieved chunk contains the answer | 4/5 MET | 4/5 MET | unchanged |
+| 2. Every answer names a source | 5/5 MET | 4/5 **MISSED** | **worse** |
+| 3. Gate stops out-of-corpus questions | 5/5 MET | 5/5 MET | unchanged |
+| 3-revised. Both sides of the gate | **FAILED** | **PASSES** | **better** |
+| 4. Chunks read as complete thoughts | 5/5 MET | 5/5 MET | unchanged |
+| 5. Retrieval brings back 2+ useful chunks | 3/5 MISSED | 2/5 **MISSED** | **worse** |
 
 **Did it help?**
 
-<!-- Say plainly whether it did, and how you know. If it made things worse,
-     say that — a change that backfired, honestly reported, earns full credit
-     and is more interesting than one that worked. What matters is that you can
-     tell.
+Yes on the failure I aimed at, and my scorecard got worse. Both of those are
+real and they are the same event.
 
-     Milestone 4. -->
+**What it fixed.** The revised criterion 3 — the one I wrote in Milestone 2 and
+immediately failed — now passes both halves.
+[`results/gate_probe_after_2026-09-27.txt`](results/gate_probe_after_2026-09-27.txt):
+
+```
+                     before          after
+gym opening hours    0.496  through  0.683  refused     (no gym document exists)
+campus health centre 0.527  refused  0.382  answered    (health_center.txt does)
+near misses let through      1 of 5         0 of 5
+covered wrongly refused      1 of 8         0 of 8
+```
+
+The inversion is gone. `THRESHOLD` is still 0.52 — I did not retune it, and
+deliberately did not, because changing the scoring and the cutoff together
+would have made it impossible to say which one moved the numbers.
+
+**What it broke, and why the two are the same event.** Before, the dining hall
+question produced this:
+
+```
+Pellew Dining Hall is open until 8:00pm daily, whereas Halden Hall closes at 7:00pm.
+Source: `dining_pellew_dining_hall.txt` (and `dining_halden_hall_followup.txt`)
+```
+
+Confident, sourced, and **wrong** — Verrill Street Grill closes at 1:00am.
+After:
+
+```
+I don't have enough information to determine which dining hall is open the
+latest, as the provided documents only contain information for Pellew Dining
+Hall.
+```
+
+That is the system getting better at the thing I most wanted it to be better
+at, and **two of my five criteria score it as a regression.** Run 3's version
+of that answer omits the filename, so criterion 2 drops to 4 of 5 and MISSES a
+target it held 15 times out of 15 before. Criterion 5 drops from 3 of 5 to 2 of
+5 because the dining question no longer retrieves Halden's closing time, so it
+has one useful chunk instead of two.
+
+My criteria reward confident coverage and penalise accurate refusal. I did not
+know that until a change made the system more honest and the scorecard went
+down.
+
+**The mechanism behind the criterion 5 drop**, since "it got worse" is not a
+diagnosis. Lexical coverage rewards chunks that repeat the question's words.
+`Pellew Dining Hall` contains both "dining" and "hall"; `Re: Halden Hall`
+contains only "hall". So hybrid scoring concentrated all five slots on the one
+hall whose title best echoes the query:
+
+```
+                          before                          after
+1  0.4215 pellew_followup        1  0.5100 pellew_followup
+2  0.4557 pellew_followup        2  0.5272 pellew_followup
+3  0.4564 halden_followup  ←     3  0.5453 pellew_dining_hall
+4  0.4920 pellew_dining_hall     4  0.6359 innisfree_hall_noise
+5  0.4964 aldridge_hall          5  0.6373 aldridge_hall_noise
+```
+
+Halden is gone. **Hybrid search helps single-fact lookup and hurts comparison
+questions**, because a comparison needs breadth across documents and lexical
+matching narrows onto whichever document echoes the query hardest. That is a
+property of the fix, not a bug in it, and it is worth knowing.
+
+The same narrowing helps elsewhere. The laundry question used to retrieve three
+*other* dorms' laundry prices at ranks 3–5 — Calder at $2.00, Aldridge at $1.75,
+Fenwick at $2.00 — next to Old Brewhouse's $1.50. All five chunks now come from
+Old Brewhouse. Nothing in my criteria measures "stopped handing the model three
+wrong prices for a question about one dorm", but it is the change I would most
+want in a system students actually used.
+
+**Where the dining hall answer still is.** Verrill moved from rank 78 to rank
+**81** of 159 — slightly further away, because its hours chunk contains none of
+"dining", "hall", "open" or "latest" and the lexical half therefore scores it
+at zero. Criterion 1 holds at 4 of 5 for the same reason it did before. A
+comparison question is not a passage lookup, and I have now confirmed that
+twice with two different fixes.
+
+**One process note.** Partway through this milestone every question started
+being refused with nonsense top chunks, and I spent a while assuming my hybrid
+code was wrong. It wasn't. I had run `tools/smoke_test.py`, which is a staff
+tool that calls `build_index` with `AI201_FAKE_EMBEDDINGS=1` against the real
+`config.CHROMA_DIR` — it had overwritten my index with stand-in vectors.
+`python app.py index` restored it. I re-ran the before-numbers with
+`AI201_HYBRID=0` afterwards and they reproduce exactly (0.496 and 0.527), which
+is what tells me the after-numbers are comparable and not an artefact of the
+rebuild.
 
 ## What's Still Broken
 

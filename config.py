@@ -65,7 +65,28 @@ TOP_K = 5               # how many chunks to pull back per question
 # closest near miss). 0.52 is the middle of it. The shipped 0.6 sat 0.012
 # below that near miss — close enough that one more question would have
 # slipped through.
+#
+# Unit 2 note: left at 0.52 deliberately after switching retrieval to hybrid
+# (below). Changing the scoring and the cutoff in the same step would make it
+# impossible to say which one moved the numbers. It turns out not to need
+# changing — see the README.
 THRESHOLD = 0.52
+
+
+# ─── Hybrid retrieval (unit 2, Milestone 4) ──────────────────────────────────
+# Blend embedding distance with lexical coverage. See lexical.py for why, and
+# the README for what it fixed.
+#
+# Set AI201_HYBRID=0 to get the unit 1 behaviour back — semantic only. The
+# "before" run log was produced that way and stays reproducible.
+
+HYBRID = os.getenv("AI201_HYBRID", "1") != "0"
+
+# How many chunks to pull back from the vector store before re-scoring them
+# with the lexical signal. Bigger than TOP_K on purpose: a chunk the embedding
+# ranks 30th can be the right answer once its keywords are counted, and it
+# cannot be re-scored if it was never fetched.
+HYBRID_CANDIDATES = 50
 
 
 # ─── Models ──────────────────────────────────────────────────────────────────

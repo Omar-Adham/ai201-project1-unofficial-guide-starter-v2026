@@ -199,25 +199,42 @@ def search(
             f"No index called '{name}'. Run `python app.py index` first."
         ) from exc
 
+    # With hybrid on, fetch a wider pool than asked for and let the lexical
+    # score decide the final order. Without it, fetch exactly what was asked.
+    wanted = max(top_k, config.HYBRID_CANDIDATES) if config.HYBRID else top_k
+
     raw = collection.query(
         query_embeddings=embed([question]),
-        n_results=min(top_k, collection.count()),
+        n_results=min(wanted, collection.count()),
     )
 
     results: list[Result] = []
     for text, meta, distance in zip(
         raw["documents"][0], raw["metadatas"][0], raw["distances"][0]
     ):
+        distance = float(distance)
+        if config.HYBRID:
+            import lexical  # noqa: PLC0415 — keeps the semantic-only path clean
+
+            distance = lexical.combine(distance, question, text, corpus)
+
         results.append(
             Result(
                 text=text,
                 source=str(meta.get("source", "unknown")),
                 label=f"{meta.get('source', 'unknown')}#{meta.get('index', 0)}",
-                distance=float(distance),
+                distance=distance,
                 produced_by=str(meta.get("produced_by", "unknown")),
             )
         )
-    return results
+
+    # Chroma returned these in embedding order. Re-scoring changes that order,
+    # so sort before truncating — otherwise the wider pool is pointless and
+    # the chunk the lexical signal rescued gets dropped anyway.
+    if config.HYBRID:
+        results.sort(key=lambda r: r.distance)
+
+    return results[:top_k]
 
 
 def index_exists(corpus: str | None = None, variant: str = "default") -> bool:
